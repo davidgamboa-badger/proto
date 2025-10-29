@@ -263,17 +263,29 @@ export function PartsManager({
       part.selections.quantity
     );
   };
+const firstIncompleteStepIndex = (p: Part) => {
+  const c = getStepCompletion(p);
+  if (!c.process)  return 0;
+  if (!c.material) return 1;
+  if (!c.surface)  return 2;
+  if (!c.coating)  return 3;
+  // extras optional; leave where user left off if all required are done
+  return p.currentStep ?? 0;
+};
 
-  const togglePartExpansion = (partId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const newExpanded = new Set(expandedParts);
-    if (newExpanded.has(partId)) {
-      newExpanded.delete(partId);
-    } else {
-      newExpanded.add(partId);
-    }
-    setExpandedParts(newExpanded);
-  };
+const togglePartExpansion = (partId: string, e?: React.MouseEvent) => {
+  if (e) e.stopPropagation();
+  setExpandedParts(prev => {
+    const s = new Set(prev);
+    if (s.has(partId)) s.delete(partId); else s.add(partId);
+    return s;
+  });
+  const p = parts.find(p => p.id === partId);
+  if (p && !expandedParts.has(partId)) {
+    setPartStep(partId, firstIncompleteStepIndex(p));
+  }
+};
+
 
   const setPartStep = (partId: string, stepIndex: number) => {
     setParts(
@@ -316,21 +328,6 @@ export function PartsManager({
     },
   });
 
-  const handleFileUpload = (files: FileList | null) => {
-    if (!files) return;
-
-    const newParts: Part[] = [];
-    Array.from(files).forEach((file, index) => {
-      const baseName = file.name.replace(/\.[^/.]+$/, "");
-      const part = createNewPart(`${baseName}`, file.name, file.size);
-      newParts.push(part);
-    });
-
-    setParts([...parts, ...newParts]);
-    if (newParts.length > 0 && !activePart) {
-      setActivePart(newParts[0].id);
-    }
-  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -348,11 +345,45 @@ export function PartsManager({
     setDragOver(false);
   };
 
-  const addEmptyPart = () => {
-    const part = createNewPart(`Part ${parts.length + 1}`);
-    setParts([...parts, part]);
-    setActivePart(part.id);
+const addEmptyPart = () => {
+  const part = createNewPart(`Part ${parts.length + 1}`);
+  setParts([...parts, part]);
+  expandAndFocus(part.id);
+};
+
+const handleFileUpload = (files: FileList | null) => {
+  if (!files) return;
+  const newParts: Part[] = [];
+  Array.from(files).forEach((file) => {
+    const baseName = file.name.replace(/\.[^/.]+$/, "");
+    newParts.push(createNewPart(baseName, file.name, file.size));
+  });
+  const all = [...parts, ...newParts];
+  setParts(all);
+  // open the first of the newly added files
+  if (newParts.length > 0) expandAndFocus(newParts[0].id);
+};
+
+const duplicatePart = (partId: string) => {
+  const src = parts.find(p => p.id === partId);
+  if (!src) return;
+  const newPart = {
+    ...src,
+    id: `part-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    name: `${src.name} Copy`,
+    fileName: undefined,
+    fileSize: undefined,
   };
+  setParts([...parts, newPart]);
+  expandAndFocus(newPart.id);
+};
+
+const createVariation = (partId: string) => {
+  // ...your existing logic...
+  setParts(newParts);
+  expandAndFocus(newVariation.id);
+};
+
 
   const removePart = (partId: string) => {
     const newParts = parts.filter((p) => p.id !== partId);
@@ -362,66 +393,8 @@ export function PartsManager({
     }
   };
 
-  const duplicatePart = (partId: string) => {
-    const partToDuplicate = parts.find((p) => p.id === partId);
-    if (partToDuplicate) {
-      const newPart = {
-        ...partToDuplicate,
-        id: `part-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: `${partToDuplicate.name} Copy`,
-        fileName: undefined,
-        fileSize: undefined,
-      };
-      setParts([...parts, newPart]);
-      setActivePart(newPart.id);
-    }
-  };
 
-  const createVariation = (partId: string) => {
-    const sourcePart = parts.find((p) => p.id === partId);
-    if (!sourcePart) return;
 
-    // Get the parent part (if this is already a variation, use its parent)
-    const parentPart = sourcePart.parentId
-      ? parts.find((p) => p.id === sourcePart.parentId)
-      : sourcePart;
-
-    if (!parentPart) return;
-
-    // Count existing variations of this parent
-    const existingVariations = parts.filter(
-      (p) =>
-        p.parentId === parentPart.id ||
-        (p.id === parentPart.id && p.isVariation)
-    );
-    const variationNumber = existingVariations.length + 1;
-
-    const newVariation: Part = {
-      ...sourcePart,
-      id: `part-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: `Variant #${variationNumber}`,
-      parentId: parentPart.id,
-      isVariation: true,
-      variationNumber,
-      // Keep the same file as the parent
-      fileName: parentPart.fileName,
-      fileSize: parentPart.fileSize,
-    };
-
-    // Insert the variation right after the source part
-    const sourceIndex = parts.findIndex((p) => p.id === partId);
-    const newParts = [...parts];
-    newParts.splice(sourceIndex + 1, 0, newVariation);
-    setParts(newParts);
-    setActivePart(newVariation.id);
-
-    // Expand the new variation
-    setExpandedParts((prev) => {
-      const newExpanded = new Set(prev);
-      newExpanded.add(newVariation.id);
-      return newExpanded;
-    });
-  };
 
   const removeVariation = (variationId: string) => {
     const variation = parts.find((p) => p.id === variationId);
@@ -598,6 +571,39 @@ export function PartsManager({
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
+
+  // helper to expand + focus a part
+const expandAndFocus = (id: string) => {
+  setActivePart(id);
+  setExpandedParts(prev => {
+    const s = new Set(prev);
+    s.add(id);
+    return s;
+  });
+};
+
+const isExtrasPicked = (ex?: Part["selections"]["extras"]) => {
+  if (!ex) return false;
+  return Boolean(
+    (ex.tolerance && ex.tolerance !== "standard") ||
+    (ex.threads && ex.threads.length > 0) ||
+    (ex.inspection && ex.inspection !== "none") ||
+    (ex.certificates && (ex.certificates.material || ex.certificates.finish || ex.certificates.heatTreat)) ||
+    ex.serialization ||
+    ex.customMarking ||
+    (ex.packaging && (ex.packaging.bagPerPart || ex.packaging.label))
+  );
+};
+
+const getStepCompletion = (p: Part) => ({
+  process: !!p.selections.process,
+  material: !!p.selections.material,
+  surface: !!p.selections.surfaceFinish,
+  coating: !!p.selections.coating,
+  extras: isExtrasPicked(p.selections.extras),
+});
+
+
 
   return (
     <>
@@ -884,16 +890,14 @@ export function PartsManager({
                                         const StepIcon = step.icon;
                                         const isCurrentStep =
                                           index === (part.currentStep || 0);
-                                        const isCompleted =
-                                          index < (part.currentStep || 0) ||
-                                          (step.component === "process" &&
-                                            part.selections.process) ||
-                                          (step.component === "material" &&
-                                            part.selections.material) ||
-                                          (step.component === "surface" &&
-                                            part.selections.surfaceFinish) ||
-                                          (step.component === "coating" &&
-                                            part.selections.coating);
+                                        const completed = getStepCompletion(part);
+const isCompleted =
+  (step.component === "process"  && completed.process)  ||
+  (step.component === "material" && completed.material) ||
+  (step.component === "surface"  && completed.surface)  ||
+  (step.component === "coating"  && completed.coating)  ||
+  (step.component === "extras"   && completed.extras);
+
 
                                         // Get selected value for this step
                                         let selectedValue = "";
