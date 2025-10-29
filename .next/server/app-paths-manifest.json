@@ -1,10 +1,10 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/api/quotes/[quoteId]/parts/[partId]/attachments/route": "app/api/quotes/[quoteId]/parts/[partId]/attachments/route.js",
   "/api/checkout/[quoteId]/confirm/route": "app/api/checkout/[quoteId]/confirm/route.js",
-  "/page": "app/page.js",
+  "/api/quotes/[quoteId]/parts/[partId]/attachments/route": "app/api/quotes/[quoteId]/parts/[partId]/attachments/route.js",
   "/api/quotes/[quoteId]/route": "app/api/quotes/[quoteId]/route.js",
   "/api/user/addresses/[id]/route": "app/api/user/addresses/[id]/route.js",
-  "/checkout/page": "app/checkout/page.js",
-  "/api/user/addresses/route": "app/api/user/addresses/route.js"
+  "/api/user/addresses/route": "app/api/user/addresses/route.js",
+  "/page": "app/page.js",
+  "/checkout/page": "app/checkout/page.js"
 }
