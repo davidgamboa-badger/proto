@@ -378,8 +378,51 @@ const duplicatePart = (partId: string) => {
   expandAndFocus(newPart.id);
 };
 
-const createVariation = (partId: string) => {
-  // ...your existing logic...
+ const createVariation = (partId: string) => {
+    const sourcePart = parts.find((p) => p.id === partId);
+    if (!sourcePart) return;
+
+    // Get the parent part (if this is already a variation, use its parent)
+    const parentPart = sourcePart.parentId
+      ? parts.find((p) => p.id === sourcePart.parentId)
+      : sourcePart;
+
+    if (!parentPart) return;
+
+    // Count existing variations of this parent
+    const existingVariations = parts.filter(
+      (p) =>
+        p.parentId === parentPart.id ||
+        (p.id === parentPart.id && p.isVariation)
+    );
+    const variationNumber = existingVariations.length + 1;
+
+    const newVariation: Part = {
+      ...sourcePart,
+      id: `part-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: `Variant #${variationNumber}`,
+      parentId: parentPart.id,
+      isVariation: true,
+      variationNumber,
+      // Keep the same file as the parent
+      fileName: parentPart.fileName,
+      fileSize: parentPart.fileSize,
+    };
+
+    // Insert the variation right after the source part
+    const sourceIndex = parts.findIndex((p) => p.id === partId);
+    const newParts = [...parts];
+    newParts.splice(sourceIndex + 1, 0, newVariation);
+    setParts(newParts);
+    setActivePart(newVariation.id);
+
+    // Expand the new variation
+    setExpandedParts((prev) => {
+      const newExpanded = new Set(prev);
+      newExpanded.add(newVariation.id);
+      return newExpanded;
+    });
+  
   setParts(newParts);
   expandAndFocus(newVariation.id);
 };
