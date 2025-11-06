@@ -3,6 +3,15 @@
 // Centralized pricing + helpers so both pages/components use the same math
 // =============================
 
+// Add this helper type
+export type PartAttachment = {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  uploadedAt: string; // ISO string
+};
+
+// Update Part to include attachments?:
 export type Part = {
   id: string;
   name: string;
@@ -20,7 +29,9 @@ export type Part = {
     quantity: number;
     leadTime: string;
   };
+  attachments?: PartAttachment[]; // <-- bring this back (optional)
 };
+
 
 export const pricingData = {
   process: {
