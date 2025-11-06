@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart,
@@ -14,7 +14,6 @@ import {
   ChevronRight,
   Search,
   X,
-  Hash,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +29,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+
+import { useRouter } from "next/navigation";
+import { useQuoteStore } from "@/lib/quote-store";
+import type { Part } from "@/lib/pricing";
+
+
+
 
 // Mock pricing data based on configurations
 const pricingData = {
@@ -76,44 +82,14 @@ const pricingData = {
 };
 
 const leadTimeOptions = [
-  {
-    value: "1",
-    label: "1 Day",
-    type: "expedited",
-    multiplier: 2.5,
-    description: "Express",
-  },
-  {
-    value: "2",
-    label: "2 Days",
-    type: "expedited",
-    multiplier: 2.1,
-    description: "Rush",
-  },
-  {
-    value: "3",
-    label: "3 Days",
-    type: "expedited",
-    multiplier: 1.7,
-    description: "Fast",
-  },
-  {
-    value: "5",
-    label: "5 Days",
-    type: "expedited",
-    multiplier: 1.3,
-    description: "Quick",
-  },
-  {
-    value: "7",
-    label: "7 Days",
-    type: "standard",
-    multiplier: 1.0,
-    description: "Standard",
-  },
+  { value: "1", label: "1 Day", type: "expedited", multiplier: 2.5, description: "Express" },
+  { value: "2", label: "2 Days", type: "expedited", multiplier: 2.1, description: "Rush" },
+  { value: "3", label: "3 Days", type: "expedited", multiplier: 1.7, description: "Fast" },
+  { value: "5", label: "5 Days", type: "expedited", multiplier: 1.3, description: "Quick" },
+  { value: "7", label: "7 Days", type: "standard", multiplier: 1.0, description: "Standard" },
 ];
 
-const leadTimeMultipliers = {
+const leadTimeMultipliers: Record<string, number> = {
   "1": 2.5,
   "2": 2.1,
   "3": 1.7,
@@ -199,26 +175,12 @@ const requirementCategories = [
   },
 ];
 
-interface Part {
-  id: string;
-  name: string;
-  fileName?: string;
-  fileSize?: number;
-  selections: {
-    process: string;
-    material: string;
-    surfaceFinish: string;
-    coating: string;
-    quantity: number;
-    leadTime: string;
-  };
-}
-
 interface QuoteSidebarProps {
   selections: any;
   setSelections: (selections: any) => void;
   parts?: Part[];
   activePart?: string | null;
+  onRequestQuote?: () => void; // NEW
 }
 
 export function QuoteSidebar({
@@ -226,21 +188,17 @@ export function QuoteSidebar({
   setSelections,
   parts = [],
   activePart,
+  onRequestQuote, 
 }: QuoteSidebarProps) {
   const [additionalRequirements, setAdditionalRequirements] = useState("");
   const [requirementsExpanded, setRequirementsExpanded] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(
-    new Set()
-  );
+  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [expediteOnly, setExpediteOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const [orderZip, setOrderZip] = useState("");
-  const TAX_RATE = 0.0875; // keep hardcoded for now
-  const zipTouched = orderZip.length > 0;
-  const isZipValid = /^\d{5}(-\d{4})?$/.test(orderZip); // simple US ZIP/ZIP+4
-
+  const router = useRouter();
+  const createQuoteFromParts = useQuoteStore((s) => s.createQuoteFromParts);
   // Handle option toggle
   const toggleOption = (optionId: string) => {
     const newSelected = new Set(selectedOptions);
@@ -303,13 +261,11 @@ export function QuoteSidebar({
       p.selections.surfaceFinish &&
       p.selections.coating
   );
-  const subtotal = completeParts.reduce(
-    (sum, part) => sum + calculatePartPrice(part),
-    0
-  );
+  const requiresManual = parts.some(
+  (p) => p.selections?.process === "sheet-metal"
+);
 
-  const tax = zipTouched ? subtotal * TAX_RATE : 0;
-  const total = subtotal + tax;
+  const subtotal = completeParts.reduce((sum, part) => sum + calculatePartPrice(part), 0);
 
   return (
     <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-md">
@@ -319,8 +275,7 @@ export function QuoteSidebar({
           <span>Quote Summary</span>
         </CardTitle>
         <p className="text-sm text-slate-500">
-          {parts.length} part{parts.length !== 1 ? "s" : ""} •{" "}
-          {completeParts.length} configured
+          {parts.length} part{parts.length !== 1 ? "s" : ""} • {completeParts.length} configured
         </p>
       </CardHeader>
 
@@ -347,27 +302,30 @@ export function QuoteSidebar({
                     className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">
-                        {part.name}
-                      </p>
+                      <p className="text-sm font-medium text-slate-900 truncate">{part.name}</p>
                       {isComplete ? (
+                        part.selections.process === "sheet-metal" ? (
+      <div className="text-xs font-semibold text-amber-700">
+        Manual quote required
+      </div>
+    ) : (
                         <p className="text-xs text-slate-500">
                           Qty: {part.selections.quantity} • $
-                          {(partPrice / part.selections.quantity).toFixed(2)}{" "}
-                          each
-                        </p>
+                          {(partPrice / part.selections.quantity).toFixed(2)} each
+                        </p>)
                       ) : (
-                        <p className="text-xs text-amber-600">
-                          Configuration incomplete
-                        </p>
+                        <p className="text-xs text-amber-600">Configuration incomplete</p>
                       )}
                     </div>
                     <div className="text-right">
                       {isComplete ? (
-                        <div className="text-sm font-semibold text-slate-900">
-                          ${partPrice.toFixed(2)}
-                        </div>
-                      ) : (
+part.selections.process === "sheet-metal" ? (
+      <div className="text-xs font-semibold text-amber-700">
+        Manual quote required
+      </div>
+    ) : (
+                        <div className="text-sm font-semibold text-slate-900">${partPrice.toFixed(2)}</div>
+                      )) : (
                         <div className={`w-3 h-3 rounded-full bg-slate-300`} />
                       )}
                     </div>
@@ -413,13 +371,9 @@ export function QuoteSidebar({
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
-              <span className="text-sm font-medium text-slate-800">
-                Configure order-wide requirements
-              </span>
+              <span className="text-sm font-medium text-slate-800">Configure order-wide requirements</span>
             </div>
-            <span className="text-[11px] text-slate-500">
-              ITAR, ISO, shipping, certificates…
-            </span>
+            <span className="text-[11px] text-slate-500">ITAR, ISO, shipping, certificates…</span>
           </button>
 
           <AnimatePresence>
@@ -450,15 +404,8 @@ export function QuoteSidebar({
                     )}
                   </div>
                   <div className="flex items-center space-x-2 whitespace-nowrap">
-                    <Switch
-                      checked={expediteOnly}
-                      onCheckedChange={setExpediteOnly}
-                      id="expedite-only"
-                    />
-                    <label
-                      htmlFor="expedite-only"
-                      className="text-sm text-slate-700 cursor-pointer"
-                    >
+                    <Switch checked={expediteOnly} onCheckedChange={setExpediteOnly} id="expedite-only" />
+                    <label htmlFor="expedite-only" className="text-sm text-slate-700 cursor-pointer">
                       Expedite Only
                     </label>
                   </div>
@@ -468,8 +415,7 @@ export function QuoteSidebar({
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {requirementCategories.map((category) => {
                     const filteredOptions = getFilteredOptions(category);
-                    if (searchQuery && filteredOptions.length === 0)
-                      return null;
+                    if (searchQuery && filteredOptions.length === 0) return null;
 
                     return (
                       <div key={category.id} className="space-y-2">
@@ -480,11 +426,7 @@ export function QuoteSidebar({
                             name="requirement-category"
                             checked={selectedCategory === category.id}
                             onChange={() =>
-                              setSelectedCategory(
-                                selectedCategory === category.id
-                                  ? null
-                                  : category.id
-                              )
+                              setSelectedCategory(selectedCategory === category.id ? null : category.id)
                             }
                             className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                           />
@@ -509,9 +451,7 @@ export function QuoteSidebar({
                                 >
                                   <Checkbox
                                     checked={selectedOptions.has(option.id)}
-                                    onCheckedChange={() =>
-                                      toggleOption(option.id)
-                                    }
+                                    onCheckedChange={() => toggleOption(option.id)}
                                     className="w-4 h-4"
                                   />
                                   <span className="text-sm text-slate-600 group-hover:text-slate-900">
@@ -530,9 +470,7 @@ export function QuoteSidebar({
                 {/* Selected Requirements Summary */}
                 {selectedOptions.size > 0 && (
                   <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-xs font-medium text-blue-900 mb-2">
-                      Selected Requirements:
-                    </p>
+                    <p className="text-xs font-medium text-blue-900 mb-2">Selected Requirements:</p>
                     <div className="flex flex-wrap gap-1">
                       {Array.from(selectedOptions).map((optionId) => {
                         const option = requirementCategories
@@ -545,10 +483,7 @@ export function QuoteSidebar({
                             className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full flex items-center space-x-1"
                           >
                             <span>{option.name}</span>
-                            <button
-                              onClick={() => toggleOption(optionId)}
-                              className="hover:bg-blue-700 rounded-full"
-                            >
+                            <button onClick={() => toggleOption(optionId)} className="hover:bg-blue-700 rounded-full">
                               <X className="w-3 h-3" />
                             </button>
                           </span>
@@ -560,9 +495,7 @@ export function QuoteSidebar({
 
                 {/* Additional Notes */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">
-                    Additional Notes
-                  </label>
+                  <label className="text-sm font-medium text-slate-700">Additional Notes</label>
                   <Textarea
                     placeholder="Enter any other special requirements or notes..."
                     value={additionalRequirements}
@@ -577,77 +510,26 @@ export function QuoteSidebar({
 
         <Separator />
 
-        {/* Tax Location */}
-        <div className="space-y-2">
-          <h4 className="font-medium text-slate-900 flex items-center gap-2">
-            <Hash className="w-4 h-4" />
-            <span>Tax Location</span>
-          </h4>
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Enter ZIP (e.g., 60601)"
-              value={orderZip}
-              onChange={(e) => setOrderZip(e.target.value.trim())}
-              className="h-9"
-              inputMode="numeric"
-              aria-label="ZIP code"
-            />
-            <span
-              className={`text-xs ${
-                zipTouched && !isZipValid ? "text-amber-700" : "text-slate-500"
-              }`}
-            >
-              {zipTouched
-                ? isZipValid
-                  ? "ZIP received. Estimating tax…"
-                  : "Invalid ZIP format"
-                : "Enter ZIP to estimate sales tax"}
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Prototype preview uses a fixed {Math.round(TAX_RATE * 1000) / 10}%
-            rate.
-          </p>
-        </div>
-
-        {/* Pricing Summary */}
+        {/* Pricing Summary (subtotal only) */}
         <div className="space-y-4">
           <h4 className="font-medium text-slate-900">Pricing Summary</h4>
 
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-slate-600">Subtotal</span>
-              <span className="font-medium text-slate-900">
-                ${subtotal.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-600">Estimated Shipping</span>
-              <span className="font-medium text-slate-900">$25.00</span>
-            </div>
-
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-600">
-                Sales Tax {zipTouched && isZipValid ? `(ZIP ${orderZip})` : ""}
-              </span>
-              <span className="font-medium text-slate-900">
-                {zipTouched && isZipValid ? `$${tax.toFixed(2)}` : "—"}
-              </span>
+              <span className="font-medium text-slate-900">${subtotal.toFixed(2)}</span>
             </div>
 
             <Separator />
 
             <div className="flex justify-between">
-              <span className="text-lg font-semibold text-slate-900">
-                Total
-              </span>
-              <span className="text-2xl font-bold text-blue-600">
-                $
-                {(subtotal + (zipTouched && isZipValid ? tax + 25 : 0)).toFixed(
-                  2
-                )}
-              </span>
+              <span className="text-lg font-semibold text-slate-900">Total</span>
+              <span className="text-2xl font-bold text-blue-600">${subtotal.toFixed(2)}</span>
             </div>
+
+            <p className="text-[11px] text-slate-500 text-right">
+              Plus shipping & handling and taxes calculated at checkout.
+            </p>
           </div>
 
           {completeParts.length === 0 && (
@@ -663,40 +545,42 @@ export function QuoteSidebar({
         <Separator />
 
         {/* Action Buttons */}
-        <div className="space-y-3">
-          <Button
-            className="w-full bg-blue-600 hover:bg-blue-700"
-            size="lg"
-            disabled={completeParts.length === 0}
-            onClick={() => {
-              // Generate quote ID and navigate to checkout
-              const quoteId = `QUOTE-${Date.now()}`;
-              window.location.href = `/checkout?quoteId=${quoteId}`;
-            }}
-          >
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            Request Quote ({completeParts.length} part
-            {completeParts.length !== 1 ? "s" : ""})
-          </Button>
-          <p className="text-[11px] text-slate-500 text-center">
-            Order Requirements apply to the entire quote.
-          </p>
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              alert("Save quote functionality would be implemented here.");
-            }}
-          >
-            Save Quote
-          </Button>
-        </div>
+          <div className="space-y-3">
+    <Button
+      className="w-full bg-blue-600 hover:bg-blue-700"
+      size="lg"
+      disabled={completeParts.length === 0}
+      onClick={() => {
+        if (onRequestQuote) {
+          onRequestQuote();
+        } else {
+          // fallback: create quote and route
+          const id = createQuoteFromParts(parts);
+          router.push(`/checkout?quoteId=${id}`);
+        }
+      }}
+    >
+      <ShoppingCart className="w-4 h-4 mr-2" />
+      Request Quote ({completeParts.length} part{completeParts.length !== 1 ? "s" : ""})
+    </Button>
+    <p className="text-[11px] text-slate-500 text-center">
+      Order Requirements apply to the entire quote.
+    </p>
+    <Button
+      variant="outline"
+      className="w-full"
+      onClick={() => {
+        alert("Save quote functionality would be implemented here.");
+      }}
+    >
+      Save Quote
+    </Button>
+  </div>
+
 
         {/* Additional Info */}
         <div className="text-center">
-          <p className="text-xs text-slate-500">
-            Questions? Contact our team for custom quotes and volume pricing
-          </p>
+          <p className="text-xs text-slate-500">Questions? Contact our team for custom quotes and volume pricing</p>
           <Button
             variant="link"
             className="text-xs text-blue-600 p-0 h-auto"

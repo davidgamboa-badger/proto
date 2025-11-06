@@ -7,28 +7,16 @@ import { QuoteSidebar } from '@/components/quote-sidebar'
 import { PartsManager } from '@/components/parts-manager'
 import { motion } from 'framer-motion'
 
-interface Part {
-  id: string
-  name: string
-  fileName?: string
-  fileSize?: number
-  thumbnailUrl?: string
-  drawingFileName?: string
-  drawingFileSize?: number
-  currentStep: number
-  selections: {
-    process: string
-    material: string
-    surfaceFinish: string
-    coating: string
-    quantity: number
-    leadTime: string
-  }
-}
+
+import { useQuoteStore } from "@/lib/quote-store";
+import type { Part } from "@/lib/pricing";
+import { useSearchParams, useRouter } from 'next/navigation'
 
 export default function Home() {
   const [isClient, setIsClient] = useState(false)
-  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlQuoteId = searchParams?.get('quoteId') || null
   // Prevent hydration mismatch
   useEffect(() => {
     setIsClient(true)
@@ -39,6 +27,23 @@ export default function Home() {
   const [dragOver, setDragOver] = useState(false)
 
   // Show loading state during hydration
+
+const createQuoteFromParts = useQuoteStore((s) => s.createQuoteFromParts);
+
+useEffect(() => {
+    if (!urlQuoteId) return
+    const quote = useQuoteStore.getState().getQuote(urlQuoteId)
+    if (quote && quote.parts?.length) {
+      setParts(quote.parts)
+    }
+  }, [urlQuoteId])
+const handleRequestQuote = (parts: Part[]) => {
+const id = createQuoteFromParts(parts);
+router.push(`/checkout?quoteId=${id}`);
+
+
+
+};
   if (!isClient) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
@@ -191,6 +196,7 @@ export default function Home() {
                   setSelections={() => {}}
                   parts={parts}
                   activePart={activePart}
+                  onRequestQuote={() => handleRequestQuote(parts)}
                 />
               </motion.div>
             </div>

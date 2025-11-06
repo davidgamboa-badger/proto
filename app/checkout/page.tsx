@@ -1,6 +1,8 @@
 
 'use client'
 
+
+import { useQuoteStore } from "@/lib/quote-store";
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -45,40 +47,37 @@ function CheckoutPageContent() {
     setIsClient(true)
   }, [])
 
-  // Load quote data
   useEffect(() => {
-    if (!quoteId) {
-      setError('No quote ID provided')
-      setLoading(false)
-      return
-    }
+if (!quoteId) {
+setError("No quote ID provided");
+setLoading(false);
+return;
+}
 
-    // Simulate loading quote data (replace with actual API call)
-    const loadQuoteData = async () => {
-      try {
-        // Mock data - replace with: const response = await fetch(`/api/quotes/${quoteId}`)
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
-        // For now, use mock data
-        setQuoteData({
-          id: quoteId,
-          parts: [],
-          subtotal: 0,
-          tax: 0,
-          total: 0,
-          additionalRequirements: [],
-          notes: ''
-        })
-        
-        setLoading(false)
-      } catch (err) {
-        setError('Failed to load quote data')
-        setLoading(false)
-      }
-    }
 
-    loadQuoteData()
-  }, [quoteId])
+const quote = useQuoteStore.getState().getQuote(quoteId);
+if (!quote) {
+// optional: support deep-linking by redirecting back
+setError("Quote not found in this session");
+setLoading(false);
+return;
+}
+
+
+// You can compute totals here or in OrderSummary; using subtotal from store keeps UI consistent
+setQuoteData({
+id: quote.id,
+parts: quote.parts,
+subtotal: quote.subtotal,
+tax: 0, // you removed tax calc from sidebar; leave tax to final payment step
+total: quote.subtotal, // display-only; show "plus shipping & taxes at checkout"
+additionalRequirements: [],
+notes: "",
+});
+setLoading(false);
+}, [quoteId]);
+
+
 
   const handleFormUpdate = (section: keyof CheckoutFormData, data: any) => {
     setFormData(prev => ({
@@ -196,6 +195,14 @@ function CheckoutPageContent() {
               <CheckoutPartsReview 
                 quoteId={quoteId}
                 onEditQuote={handleBackToQuote}
+                parts={quoteData?.parts ?? []}
+  onPartsChange={(nextParts) => {
+    // keep store + local state in sync
+    useQuoteStore.getState().updateQuoteParts(quoteId, nextParts);
+    setQuoteData((prev: any) =>
+      prev ? { ...prev, parts: nextParts, subtotal: prev.subtotal /* or recompute here if needed */ } : prev
+    );
+  }}
               />
             </motion.div>
           </div>

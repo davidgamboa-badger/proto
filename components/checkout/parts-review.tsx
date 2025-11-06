@@ -1,11 +1,12 @@
-
 'use client'
+import { calculatePartPrice, isPartConfigured } from '@/lib/pricing'
 
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Package, Edit, Upload, File, X, ExternalLink } from 'lucide-react'
+import { Package, Edit, Upload, File, X } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import type { Part } from "@/lib/pricing";
 
 interface PartAttachment {
   id: string
@@ -14,49 +15,85 @@ interface PartAttachment {
   uploadedAt: string
 }
 
-interface Part {
-  id: string
-  name: string
-  fileName?: string
-  fileSize?: number
-  attachments?: PartAttachment[]
-  selections: {
-    process: string
-    material: string
-    surfaceFinish: string
-    coating: string
-    quantity: number
-    leadTime: string
+
+const toPricingKeys = {
+  process: {
+    'CNC Machining': 'cnc',
+    '3D Printing': '3d-printing',
+    'Sheet Metal': 'sheet-metal',
+  },
+  material: {
+    'Aluminum 6061': '6061',
+    'Aluminum 7075': '7075',
+    '304 Stainless': '304-stainless',
+    '316 Stainless': '316-stainless',
+    ABS: 'abs',
+    PLA: 'pla',
+    Brass: 'brass',
+    Copper: 'copper',
+    Titanium: 'titanium',
+    Delrin: 'delrin',
+    Nylon: 'nylon',
+    PEEK: 'peek',
+  },
+  surfaceFinish: {
+    'As Machined': 'as-machined',
+    'Bead Blasted': 'bead-blast',
+    Brushed: 'brushed',
+    Anodized: 'anodized',
+    Polished: 'polished',
+    Sandblasted: 'sandblasted',
+    Tumbled: 'tumbled',
+    Passivated: 'passivated',
+  },
+  coating: {
+    None: 'none',
+    'Clear Anodize': 'clear-anodize',
+    'Black Anodize': 'black-anodize',
+    'Powder Coat': 'powder-coat',
+    'Zinc Plate': 'zinc-plate',
+    'Nickel Plate': 'nickel-plate',
+    'Chrome Plate': 'chrome-plate',
+    'Gold Plate': 'gold-plate',
+    'Teflon Coat': 'teflon-coat',
+  },
+} as const;
+
+function leadTimeToShipDateLabel(leadTime: string | number): string {
+  // Simple label; replace with real date math later
+  switch (String(leadTime)) {
+    case '1': return 'Ships in 1 day';
+    case '2': return 'Ships in 2 days';
+    case '3': return 'Ships in 3 days';
+    case '5': return 'Ships in 5 days';
+    case '7': return 'Ships in 7 days';
+    default:  return 'Ships soon';
   }
-  estimatedPrice: number
-  estimatedShipDate: string
 }
+
+
+function normalizePartForPricing(part: Part): Part {
+  const s = part.selections;
+  return {
+    ...part,
+    selections: {
+      ...s,
+      process: (toPricingKeys.process as any)[s.process] ?? s.process,
+      material: (toPricingKeys.material as any)[s.material] ?? s.material,
+      surfaceFinish: (toPricingKeys.surfaceFinish as any)[s.surfaceFinish] ?? s.surfaceFinish,
+      coating: (toPricingKeys.coating as any)[s.coating] ?? s.coating,
+      quantity: s.quantity || 1, // guard
+    },
+  };
+}
+
 
 interface CheckoutPartsReviewProps {
   quoteId: string
   onEditQuote: () => void
+  parts: Part[]                      // <-- NEW: drive UI from props
+  onPartsChange?: (parts: Part[]) => void // <-- NEW: bubble edits up (attachments)
 }
-
-// Mock data - replace with actual data from API
-const mockParts: Part[] = [
-  {
-    id: '1',
-    name: 'Metal_Fuel_Fill_Fix',
-    fileName: 'Metal_Fuel_Fill_Fix.step',
-    fileSize: 27460,
-    attachments: [],
-    selections: {
-      process: 'CNC Machining',
-      material: 'Aluminum 6061',
-      surfaceFinish: 'Bead Blasted',
-      coating: 'Clear Anodize',
-      quantity: 1,
-      leadTime: '7'
-    },
-    estimatedPrice: 86.74,
-    estimatedShipDate: 'September 18'
-  }
-]
 
 const displayNames = {
   process: 'Manufacturing Process',
@@ -65,8 +102,12 @@ const displayNames = {
   coating: 'Coating'
 }
 
-export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsReviewProps) {
-  const [parts, setParts] = useState<Part[]>(mockParts)
+export function CheckoutPartsReview({
+  quoteId,
+  onEditQuote,
+  parts,
+  onPartsChange,
+}: CheckoutPartsReviewProps) {
   const [uploadingPartId, setUploadingPartId] = useState<string | null>(null)
 
   const formatFileSize = (bytes: number) => {
@@ -77,23 +118,20 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
 
   const handleFileUpload = async (partId: string, file: File) => {
     setUploadingPartId(partId)
-    
     try {
-      // Validate file
       const allowedTypes = ['image/png', 'image/jpeg', 'application/pdf', 'image/svg+xml', 'application/dxf']
       if (!allowedTypes.includes(file.type)) {
         alert('Invalid file type. Please upload PNG, JPG, PDF, SVG, or DXF files.')
         return
       }
-
       if (file.size > 10 * 1024 * 1024) {
         alert('File size exceeds 10 MB limit.')
         return
       }
 
-      // Mock upload - replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      // Mock upload; replace with API
+      await new Promise(resolve => setTimeout(resolve, 800))
+
       const newAttachment: PartAttachment = {
         id: `${Date.now()}`,
         fileName: file.name,
@@ -101,24 +139,24 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
         uploadedAt: new Date().toISOString()
       }
 
-      setParts(prev => prev.map(p => 
-        p.id === partId 
-          ? { ...p, attachments: [...(p.attachments || []), newAttachment] }
+      const next = parts.map(p =>
+        p.id === partId
+          ? { ...p, attachments: [...(p.attachments ?? []), newAttachment] }
           : p
-      ))
-    } catch (error) {
-      alert('Failed to upload file. Please try again.')
+      )
+      onPartsChange?.(next)
     } finally {
       setUploadingPartId(null)
     }
   }
 
   const handleRemoveAttachment = (partId: string, attachmentId: string) => {
-    setParts(prev => prev.map(p => 
-      p.id === partId 
-        ? { ...p, attachments: p.attachments?.filter(a => a.id !== attachmentId) }
+    const next = parts.map(p =>
+      p.id === partId
+        ? { ...p, attachments: (p.attachments ?? []).filter(a => a.id !== attachmentId) }
         : p
-    ))
+    )
+    onPartsChange?.(next)
   }
 
   return (
@@ -129,12 +167,7 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
             <Package className="w-5 h-5" />
             <span>Parts Review</span>
           </CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEditQuote}
-            className="flex items-center space-x-2"
-          >
+          <Button variant="outline" size="sm" onClick={onEditQuote} className="flex items-center space-x-2">
             <Edit className="w-4 h-4" />
             <span>Edit Quote</span>
           </Button>
@@ -143,8 +176,15 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
           Review your parts and upload 2D drawings if needed
         </p>
       </CardHeader>
+
       <CardContent className="space-y-4">
-        {parts.map((part, index) => (
+        {parts.map((part, index) => {
+
+const normalized = normalizePartForPricing(part);
+const partPrice = isPartConfigured(normalized as Part)
+  ? calculatePartPrice(normalized)
+  : undefined;
+        return (
           <div key={part.id} className="border border-slate-200 rounded-lg p-4">
             {/* Part Header */}
             <div className="flex items-start justify-between mb-4">
@@ -155,16 +195,13 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
                 <div>
                   <h3 className="font-semibold text-slate-900">{part.name}</h3>
                   {part.fileName && (
-                    <p className="text-sm text-slate-600">{part.fileName} • {formatFileSize(part.fileSize || 0)}</p>
+                    <p className="text-sm text-slate-600">
+                      {part.fileName} • {formatFileSize(part.fileSize || 0)}
+                    </p>
                   )}
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onEditQuote}
-                className="text-blue-600 hover:text-blue-700"
-              >
+              <Button variant="ghost" size="sm" onClick={onEditQuote} className="text-blue-600 hover:text-blue-700">
                 <Edit className="w-4 h-4 mr-1" />
                 Edit
               </Button>
@@ -179,7 +216,7 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
                     <span className="text-xs text-slate-500 whitespace-nowrap">
                       {displayNames[key as keyof typeof displayNames] || key}:
                     </span>
-                    <span className="text-sm font-medium text-slate-900">{value}</span>
+                    <span className="text-sm font-medium text-slate-900">{String(value)}</span>
                   </div>
                 )
               })}
@@ -193,11 +230,14 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
               </div>
               <div>
                 <span className="text-xs text-slate-500">Est. Ship Date</span>
-                <p className="text-sm font-semibold text-slate-900">{part.estimatedShipDate}</p>
+                <p className="text-sm font-semibold text-slate-900">  {part.estimatedShipDate ?? leadTimeToShipDateLabel(part.selections.leadTime)}
+</p>
               </div>
               <div>
                 <span className="text-xs text-slate-500">Total Cost</span>
-                <p className="text-sm font-semibold text-blue-600">${part.estimatedPrice.toFixed(2)}</p>
+                <p className="text-sm font-semibold text-blue-600">
+{typeof partPrice === 'number' ? `$${partPrice.toFixed(2)}` : '—'}
+                  </p>
               </div>
             </div>
 
@@ -238,10 +278,7 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
               {part.attachments && part.attachments.length > 0 && (
                 <div className="space-y-2">
                   {part.attachments.map((attachment) => (
-                    <div
-                      key={attachment.id}
-                      className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded"
-                    >
+                    <div key={attachment.id} className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded">
                       <div className="flex items-center space-x-2 flex-1 min-w-0">
                         <File className="w-4 h-4 text-blue-600 flex-shrink-0" />
                         <span className="text-sm text-slate-900 truncate">{attachment.fileName}</span>
@@ -258,17 +295,15 @@ export function CheckoutPartsReview({ quoteId, onEditQuote }: CheckoutPartsRevie
                 </div>
               )}
 
-              <p className="text-xs text-slate-500">
-                Supported formats: PNG, JPG, PDF, SVG, DXF (Max 10 MB)
-              </p>
+              <p className="text-xs text-slate-500">Supported formats: PNG, JPG, PDF, SVG, DXF (Max 10 MB)</p>
             </div>
           </div>
-        ))}
+        )})}
 
         <Alert className="bg-amber-50 border-amber-200">
           <AlertDescription className="text-sm text-amber-900">
-            <strong>Note:</strong> Parts cannot be added or 3D files cannot be uploaded during checkout. 
-            Click "Edit Quote" to modify your parts configuration.
+            <strong>Note:</strong> Parts cannot be added or 3D files cannot be uploaded during checkout.
+            Click &quot;Edit Quote&quot; to modify your parts configuration.
           </AlertDescription>
         </Alert>
       </CardContent>
