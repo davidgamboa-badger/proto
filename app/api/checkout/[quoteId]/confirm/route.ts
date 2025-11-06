@@ -38,7 +38,6 @@ export async function POST(
       quoteId,
       status: 'confirmed',
       total: 94.33,
-      estimatedShipDate: 'September 18',
       createdAt: new Date().toISOString()
     }
 

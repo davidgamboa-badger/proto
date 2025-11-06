@@ -230,7 +230,7 @@ const partPrice = isPartConfigured(normalized as Part)
               </div>
               <div>
                 <span className="text-xs text-slate-500">Est. Ship Date</span>
-                <p className="text-sm font-semibold text-slate-900">  {part.estimatedShipDate ?? leadTimeToShipDateLabel(part.selections.leadTime)}
+                <p className="text-sm font-semibold text-slate-900">  { leadTimeToShipDateLabel(part.selections.leadTime)}
 </p>
               </div>
               <div>

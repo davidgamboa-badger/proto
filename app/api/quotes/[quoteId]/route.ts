@@ -28,7 +28,6 @@ export async function GET(
             leadTime: '7'
           },
           estimatedPrice: 86.74,
-          estimatedShipDate: 'September 18'
         }
       ],
       additionalRequirements: [],
